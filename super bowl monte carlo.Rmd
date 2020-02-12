@@ -1,0 +1,302 @@
+---
+title: "Untitled"
+author: "Drew Sandberg | RDO IT Analytics"
+date: "February 2, 2020"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+```
+
+```{r}
+getmode <- function(v) {
+   uniqv <- unique(v)
+   uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+
+
+
+```
+
+```{r}
+#variables
+purchased.squares = 1
+game.simulations = 10000
+
+
+```
+
+```{r}
+
+
+game.winnings = data.frame(winnings = as.integer(),
+                           kc = as.integer(),
+                           sf = as.integer())
+
+two.point.conversion.chart = c(1, 4, 5, 12, 15, 19, -1, -2, -5, -9, -11, -12, -16, -19)
+
+#randomly assign integers to the 10 x 10 matirx
+sf.line = sample(0:9,10, replace = FALSE)
+kc.line = sample(0:9,10, replace = FALSE)
+
+#there's likely a quicker way to populate a 10 x 10 matrix,
+#but here's what I came up for now
+numbers = data.frame(pairing = c())
+for (h in 1:10){  #columns (h) in the matrix
+  for (v in 1:10){ #rows (v) in the matrix
+    pair = c(kc.line[h], sf.line[v])
+    numbers = rbind(numbers, pair)
+  }
+}
+
+#Here's a way to randomly choose "purchased squares"" from the populated matrix
+awarded.squares = sample(1:100, purchased.squares, replace = FALSE)
+
+#now subset the matrix to only purchased squares
+numbers = numbers[awarded.squares,]
+
+#fix the column names
+colnames(numbers) = c("kc.number", "sf.number")
+
+rm(sf.line)
+rm(kc.line)
+rm(pair)
+rm(awarded.squares)
+rm(h)
+rm(v)
+```
+
+
+```{r}
+for (simulation in 1: game.simulations){
+  
+  
+        #KC averages 9.8 drives per game; SF average 11.2 drives/game
+        #Allowing the model to randomly set the # of drives per quarter
+        #giving us between 16 & 28 total drives... 
+        #could be a shoot-out/track meet or a defensive battle
+        drives.per.quarter = sample(4:7,4,replace = FALSE)
+        
+        #SF offense td/drive ~ .285; KC defense td/drive ~ .215
+        # so we randomly select the drive's td  probability to be somewhere in between
+        # field goals are completed at a lower percentage, so we add it to the td ratio
+        sf.td = sample(215:285,1,replace = FALSE)/1000
+        sf.fg = sample(129:168,1,replace = FALSE)/1000
+        
+        # same concept as above; selecting a number in between the offense's ration & defense's ratio
+        kc.td = sample(194:295,1,replace = FALSE)/1000
+        kc.fg = sample(97:218,1,replace = FALSE)/1000
+        
+        possession = if_else(sample(1:1000,1, replace = FALSE)/1000 <= .5, "KC", "SF")
+        second.half.possession = if_else(possession == "KC", "SF", "KC")
+        
+        scoring.table = data.frame(kc.score = as.integer(),
+                                   sf.score = as.integer(),
+                                   eoq = as.integer(),
+                                   game.end = as.integer())
+        
+        kc.total.points = 0
+        kc.drive.points = 0
+        
+        sf.total.points = 0
+        sf.drive.points = 0
+        
+        for (quarter in 1:4) {
+          
+          if(quarter == 3){possession = second.half.possession}
+          
+          for (drive in 1:drives.per.quarter[quarter]){
+            
+            if(possession == "KC"){
+              
+              #checking for safeties
+              sf.drive.points = 0
+              sf.drive.points = if_else(sample(1:1000,1, replace = FALSE)/1000 <= .01,2,0)
+              sf.total.points = sf.total.points + sf.drive.points
+              if(sf.drive.points == 2){scoring.table = rbind(scoring.table, c(kc.total.points%%10, sf.total.points%%10, 0, 0))}
+              
+              kc.drive.points = 0
+              kc.off.score = sample(1:1000,1, replace = FALSE)/1000
+              #sf.def.score = sample(1:1000,1, replace = FALSE)/
+              
+              #Check if drive is a touchdown
+              kc.drive.points = if_else(kc.off.score <= kc.td & sf.drive.points == 0, 6, 0)
+              kc.total.points = kc.total.points + kc.drive.points
+              if(kc.drive.points == 6){scoring.table = rbind(scoring.table, c(kc.total.points%%10, sf.total.points%%10, 0, 0))}
+              
+              
+              #PATs are converted about 95% of the time; might be more like 97%, but guessing; 
+              kc.drive.points = if_else(kc.off.score <= kc.td  & sf.drive.points == 0 & is.element(kc.total.points - sf.total.points, two.point.conversion.chart) == FALSE & sample(1:1000,1,replace = FALSE)/1000 < .95,1,0)
+              kc.drive.points = if_else(kc.off.score <= kc.td  & sf.drive.points == 0 & is.element(kc.total.points - sf.total.points, two.point.conversion.chart) == TRUE &sample(1:1000,1, replace = FALSE)/1000 <= .35,2,0)
+              kc.total.points = kc.total.points + kc.drive.points
+              if(kc.drive.points == 1 | kc.drive.points == 2){scoring.table = rbind(scoring.table, c(kc.total.points%%10, sf.total.points%%10, 0, 0))}
+              
+              #if fg pct is right, be sure we haven't already scored a td/pat... and no safties
+              kc.drive.points = if_else(kc.off.score <= kc.fg  & kc.drive.points == 0 & sf.drive.points == 0, 3, 0)
+              kc.total.points = kc.total.points + kc.drive.points
+              if(kc.drive.points == 3){scoring.table = rbind(scoring.table, c(kc.total.points%%10, sf.total.points%%10, 0, 0))}
+              
+            }
+            
+            if(possession == "SF"){  
+            
+              #checking for safeties
+              kc.drive.points = 0
+              kc.drive.points = if_else(sample(1:1000,1, replace = FALSE)/1000 <= .01,2,0)
+              kc.total.points = kc.total.points + kc.drive.points
+              if(kc.drive.points == 2){scoring.table = rbind(scoring.table, c(kc.total.points%%10, sf.total.points%%10, 0, 0))}
+              
+              
+              sf.drive.points = 0
+              sf.off.score = sample(1:1000,1, replace = FALSE)/1000
+              
+              #check touchdowns
+              sf.drive.points = if_else(sf.off.score <= sf.td & kc.drive.points == 0, 6, 0)
+              sf.total.points = sf.total.points + sf.drive.points
+              if(sf.drive.points == 6){scoring.table = rbind(scoring.table, c(kc.total.points%%10, sf.total.points%%10, 0, 0))}
+              
+              #check for 1 or 2 point PATs
+              sf.drive.points = if_else(sf.off.score <= sf.td  & kc.drive.points == 0 & is.element(sf.total.points - kc.total.points, two.point.conversion.chart) == FALSE & sample(1:1000,1,replace = FALSE)/1000 < .95,1,0)
+              sf.drive.points = if_else(sf.off.score <= sf.td  & kc.drive.points == 0 & is.element(sf.total.points - kc.total.points, two.point.conversion.chart) == TRUE &sample(1:1000,1, replace = FALSE)/1000 <= .35,2,0)
+              sf.total.points = sf.total.points + sf.drive.points
+              if(sf.drive.points == 1 | sf.drive.points == 2){scoring.table = rbind(scoring.table, c(kc.total.points%%10, sf.total.points%%10, 0, 0))}
+              
+              #if fg pct is right, be sure we haven't already scored a td/pat... and no safties
+              sf.drive.points = if_else(sf.off.score > sf.fg & kc.drive.points == 0, 3, 0)
+              sf.total.points = sf.total.points + sf.drive.points
+              if(sf.drive.points == 3){scoring.table = rbind(scoring.table, c(kc.total.points%%10, sf.total.points%%10, 0, 0))}
+              
+            }
+            
+            possession = if_else(possession == "KC", "SF", "KC")
+            
+          }
+          
+          scoring.table = rbind(scoring.table, c(kc.total.points%%10, sf.total.points%%10, 1, 0))
+          
+        }
+        
+        scoring.table = rbind(scoring.table, c(kc.total.points%%10, sf.total.points%%10, 0, 1))
+        colnames(scoring.table) = c("kc.score", "sf.score", "eoq", "game.end")
+        
+        
+        
+        
+      count.scorechange = 0
+      count.eoq = 0
+      count.gameend = 0
+      
+      for (k in 1:nrow(numbers)){
+        kc = numbers$kc.number[k]
+        sf = numbers$sf.number[k]
+        
+        count.scorechange = count.scorechange + sum(scoring.table$kc.score == kc & scoring.table$sf.score == sf & scoring.table$eoq == 0 & scoring.table$game.end == 0)
+        count.eoq = count.eoq + sum(scoring.table$kc.score == kc & scoring.table$sf.score == sf & scoring.table$eoq == 1 & scoring.table$game.end == 0)
+        count.gameend = count.gameend + sum(scoring.table$kc.score == kc & scoring.table$sf.score == sf & scoring.table$eoq == 0 & scoring.table$game.end == 1)
+      }
+      
+      game.winnings = rbind(game.winnings,c((count.scorechange * 50) + (count.eoq * 100)  + if_else(count.gameend == 1, (2500 - ((nrow(scoring.table)) - 4) * 50)- 400, 0),
+                                              kc.total.points, 
+                                              sf.total.points))
+      colnames(game.winnings) = c("winnings", "kc score", "sf score")
+
+}
+
+
+put.in = purchased.squares * 25
+times.lost = subset(game.winnings, winnings < (purchased.squares * 25))
+
+sgw = sum(game.winnings$X0) 
+
+```
+
+
+```{r}
+
+
+
+
+```
+
+
+
+```{r}
+wins.by.squares = data.frame("squares" = as.numeric(),
+                             "win.pct" = as.numeric())
+
+for (j in 1: 25){
+    df.win.prob = data.frame("squares" = as.numeric(),
+                             "sf" = as.numeric(),
+                             "kc" = as.numeric(),
+                             "win.prob" = as.numeric())
+    squares = j
+    
+        sf.table = data.frame(
+                      sf0 = c(0.0545,0.0091,	0.0030,	0.0515,	0.0455,	0.0061,	0.0394,	0.0697,	0.0030,	0.0212),
+                      sf1 = c(0.0091, 0.0061, 0, 0.0333, 0.0061, 0, 0.003, 0.0242, 0.003, 0),
+                      sf2 = c(0.003, 0, 0, 0.0091, 0, 0, 0, 0.0061, 0, 0.0091),
+                      sf3 = c(0.0515, 0.003, 0, 0.0091, 0.0061, 0, 0.0152, 0.0333, 0.003, 0),
+                      sf4 = c(0.0455, 0.0121, 0, 0.0212, 0.0091, 0, 0.003, 0.0394, 0.0061, 0.003),
+                      sf5 = c(0.0061, 0, 0, 0.0091, 0.003, 0, 0.0061, 0, 0, 0),
+                      sf6 = c(0.0394, 0.0121, 0, 0.0061, 0.003, 0, 0.0121, 0.0152, 0.003, 0.003),
+                      sf7 = c(0.0697, 0.0061, 0, 0.0333, 0.0061, 0.003, 0.0212, 0.0515, 0.0061, 0.0121),
+                      sf8 = c(0.003, 0.003, 0, 0.0091, 0.0061, 0.0061, 0.0061, 0.0091, 0, 0),
+                      sf9 = c(0.0212, 0, 0, 0.0091, 0.0061, 0, 0.0061, 0.0121, 0.003, 0))
+                
+        sf.table = data.frame(
+                    kc0 = c(0.0534, 0.0089, 0.003, 0.0504, 0.0445, 0.0059, 0.0386, 0.0682, 0.003, 0.0208),
+                    kc1 = c(0.0089, 0.0059, 0, 0.003, 0.0119, 0, 0.0119, 0.0059, 0.003, 0),
+                    kc2 = c(0.003, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+                    kc3 = c(0.0267, 0.0326, 0.0089, 0.0089, 0.0208, 0.0089, 0.0059, 0.0326, 0.0089, 0.0089),
+                    kc4 = c(0.0119, 0.0059, 0, 0.0059, 0.0089, 0.003, 0.003, 0.0059, 0.0059, 0.0059),
+                    kc5 = c(0.003, 0, 0, 0, 0, 0, 0, 0.003, 0.0059, 0),
+                    kc6 = c(0.0326, 0.003, 0, 0.0148, 0.003, 0.0059, 0.0119, 0.0208, 0.0059, 0.0059),
+                    kc7 = c(0.0386, 0.0237, 0.0059, 0.0326, 0.0386, 0, 0.0148, 0.0504, 0.0089, 0.0119),
+                    kc8 = c(0.0089, 0.003, 0, 0.003, 0.0059, 0, 0.003, 0.0059, 0, 0.003),
+                    kc9 = c(0.0089, 0, 0.0089, 0, 0.003, 0, 0.003, 0.0119, 0, 0))
+    
+    
+    for (x in 1:10000){
+    
+        win.prob = 0
+    
+        for (i in 1:squares){
+          sf = sample(1:10,1,replace = FALSE)
+          kc = sample(1:10,1,replace = FALSE)
+          win.prob = win.prob + sf.table[kc, sf]
+        }
+        
+        df.win.prob = rbind(df.win.prob, c(squares, sf - 1, kc - 1, win.prob))
+        colnames(df.win.prob) = c("squares", "sf", "kc", "win.prob")
+        
+    }
+        
+    wins.by.squares = rbind(wins.by.squares, c(squares, getmode(df.win.prob$win.prob)))
+    
+}
+colnames(wins.by.squares) = c("Squares", "WinProbability")
+View(wins.by.squares)
+
+xs = seq(1,25,1)
+ys = seq(.01, .25, .01)
+
+
+g = ggplot(wins.by.squares, aes(x = Squares, y = WinProbability)) +
+  geom_line() +
+  geom_line(aes(x = xs, y = ys), color = "red") +
+  scale_x_continuous(breaks = seq(1,25,1)) +
+  scale_y_continuous(labels = scales::percent_format(), breaks = seq(.01,.3,.02)) +
+  labs(x = "Squares Purchased",
+       y = "Probability of Winning at Least Once",
+       title = "Monte Carlo Simulation: 100 Squares Football Board for 49ers vs. Chiefs",
+       subtitle = "10,000 Simulations of Number Assignments for Squares\nPayouts on Each Scoring Play & End of Quarters") +
+  theme(panel.background = element_blank(), 
+        panel.grid.major = element_blank()
+        )
+
+print(g)
+
+```
+
