@@ -1,0 +1,121 @@
+---
+title: "2021 Super Bowl Football Square Purchasing Calculator"
+author: "Drew Sandberg"
+date: "Januar 24, 2021"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+
+```
+
+
+```{r}
+#Read in the data
+raw = read_csv("https://raw.githubusercontent.com/drewsandberg/football-squares/master/2020NFLBoxScores.csv")
+```
+
+```{r}
+# Set up dummy data frames
+visitor_prob = as.data.frame(matrix(nrow = 10, ncol = 5),
+                        row.names = c(0,1,2,3,4,5,6,7,8,9))
+
+home_prob = as.data.frame(matrix(nrow = 10, ncol = 5),
+                        row.names = c(0,1,2,3,4,5,6,7,8,9))
+
+combined_prop = as.data.frame(matrix(nrow = 10, ncol = 5),
+                        row.names = c(0,1,2,3,4,5,6,7,8,9))
+
+# Create visitor and home team datasets
+visitor = subset(raw, VisitorHome == "V")
+home = subset(raw, VisitorHome == "H")
+
+#Determine probabilities of each digit as the ending digit at end of each quarter
+for (q in 1:5){
+  for (d in 0:9){
+    visitor_prob[d+1,q] = nrow(subset(visitor,visitor[,13+q]==d)) / nrow(visitor)
+    home_prob[d+1,q] = nrow(subset(home,home[,13+q]==d)) / nrow(home)
+    combined_prop[d+1,q] = nrow(subset(raw, raw[,13+q]==d)) / nrow(raw)
+  }
+}
+
+#Clean up the column names of the datasets
+colnames(home_prob) = c("Q1", "Q2", "Q3", "Q4", "FINAL")
+colnames(visitor_prob) = c("Q1", "Q2", "Q3", "Q4", "FINAL")
+colnames(combined_prop) = c("Q1", "Q2", "Q3", "Q4", "FINAL")
+```
+
+```{r}
+Q1_Digit_Prob = round(combined_prop[1],2) * 100
+```
+
+
+```{r}
+#Create shell for conditional probability dataframe
+cond_prob_chart = data.frame(previous_digit = as.integer(),
+                             new_digit = as.integer(),
+                             prob_q1_digit = as.numeric(),
+                             prob_q2_digit_Given_q1_digit = as.numeric(),
+                             prob_q3_digit_Given_q2_digit = as.numeric(),
+                             prob_final_digit_Given_q3_digit = as.numeric())
+
+#Calculate conditional probabilities P(B|A)
+#p = prior quarter ending digits
+#n = current quarter ending digits
+for (p in 0:9){
+  for(n in 0:9){
+    prob_q2_given_q1 = nrow(subset(raw, raw$EndingDigitQ2 == n & raw$EndingDigitQ1 == p)) / nrow(subset(raw, raw$EndingDigitQ1 == p))
+    prob_q3_given_q2 = nrow(subset(raw, raw$EndingDigitQ3 == n & raw$EndingDigitQ2 == p)) / nrow(subset(raw, raw$EndingDigitQ2 == p))
+    prob_final_given_q3 = nrow(subset(raw, raw$EndingDigitFinal == n & raw$EndingDigitQ3 == p)) / nrow(subset(raw, raw$EndingDigitQ3 == p))
+    cond_prob_chart = rbind(cond_prob_chart, 
+                            c(p, n, 
+                              combined_prop[as.character(p),1],
+                              prob_q2_given_q1, 
+                              prob_q3_given_q2, 
+                              prob_final_given_q3))
+  }
+}
+
+#Clean up column names and set any NaN values to 0.
+colnames(cond_prob_chart) <- c("x_digit", "y_digit", "q1_prob_x", "q2_prob_y_given_x", "q3_prob_y_given_x", "final_prob_y_given_x")
+cond_prob_chart[is.na(cond_prob_chart)] = 0
+```
+
+
+```{r}
+#Create empty dataframes for weighted average and expected winnings
+wt_avg = data.frame(digit = integer(),
+                    whole_game_probability = as.numeric())
+
+expected_winnings = data.frame(home = as.integer(),
+                               visitor = as.integer(),
+                               exp_value = as.numeric())
+  
+#Build expected winnings by ending digits for home and visitor scores.
+for (i in 0:9){
+  ew = mean(cond_prob_chart$q1_prob_x[cond_prob_chart$x_digit ==i]) +
+       mean(cond_prob_chart$q2_prob_y_given_x[cond_prob_chart$x_digit == i]) +
+       mean(cond_prob_chart$q3_prob_y_given_x[cond_prob_chart$x_digit == i]) +
+       mean(cond_prob_chart$final_prob_y_given_x[cond_prob_chart$x_digit == i])
+  wt_avg = rbind(wt_avg, c(i, ew))
+}  
+#Again, clean up column names
+colnames(wt_avg) = c("digit", "whole_game_probability")
+
+#Calcualte probabilities for the differnt number combinations
+for (j in 0:9){
+  for (k in 0:9){
+    expected_winnings = rbind(expected_winnings, c(j, k, round(wt_avg$whole_game_probability[wt_avg$digit == j] * 
+                                                               wt_avg$whole_game_probability[wt_avg$digit == k],3
+                                                               )
+                                                   )
+                              )
+  }
+}
+
+#Cleanup the Expected Winnings dataframe column names
+colnames(expected_winnings) = c("First Digit", "Second Digit", "Expected Winnings per Dollar")
+```
+
+
